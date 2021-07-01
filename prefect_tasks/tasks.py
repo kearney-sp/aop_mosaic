@@ -1,5 +1,5 @@
 #Local Helper Functions
-from utils import get_object, h5_zenith_dask, mapinfo_extents, get_corrected
+from .utils import get_obj, h5_zenith_dask, mapinfo_extents, get_corrected
 
 #Standard Python
 import requests, datetime, re, os, json, glob

@@ -12,7 +12,7 @@ Data workflow automation (via [prefect](https://www.prefect.io/)) to process NEO
 4. Mosaic flights by selecting pixels with the sensor zenith angle nearest to NADIR
 5. Write data to a [Zarr](https://zarr.readthedocs.io/en/stable/tutorial.html#usage-tips) file (via [xarray](http://xarray.pydata.org/en/stable/generated/xarray.Dataset.to_zarr.html))
 
-### Implimentation
+### Implementation
 
 1. Create a prefect account (Free)
 2. Setup Prefect Cloud and Agent environment (see here - https://docs.prefect.io/orchestration/tutorial/overview.html)
@@ -23,4 +23,10 @@ Data workflow automation (via [prefect](https://www.prefect.io/)) to process NEO
 
 Runs On: [data_science_im_rs:latest](https://hub.docker.com/layers/rowangaffney/data_science_im_rs/latest/images/sha256-bcb165314a8fc41b0a6413d2bbb491be74cdb24d625a82d3ac90951ee6902d3b?context=repo)
 
-See: Coming Soon
+See: https://github.com/rmg55/aop_mosaic/blob/main/Neon_AOP_flow.ipynb
+
+### Todo
+
+1. Change cluster scaling from static to adaptive
+2. Improve performance on mosaic
+3. Contact Phil Townsend Lab about BRDF parameters/configurations
