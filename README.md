@@ -25,6 +25,12 @@ Runs On: [data_science_im_rs:latest](https://hub.docker.com/layers/rowangaffney/
 
 See: https://github.com/rmg55/aop_mosaic/blob/main/Neon_AOP_flow.ipynb
 
+Prefect Cloud View:
+
+<p align="center">
+<img src="./imgs/prefect_cloud_run.png" width="600" />
+</p>
+
 ### Todo
 
 1. Change cluster scaling from static to adaptive
