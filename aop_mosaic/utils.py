@@ -27,4 +27,4 @@ def mapinfo_extents(meta: str) -> str:
     return([x_min,y_min,x_max,y_max])
 
 def get_corrected(hy_obj):
-    return(hy_obj.get_chunk(0,99999,0,999999,corrections=['brdf','topo'],resampling=False))
+    return(hy_obj.get_chunk(0,99999,0,999999,corrections=['brdf','topo'],resample=False))
