@@ -1,5 +1,5 @@
 #Local Helper Functions
-from .utils import get_obj, h5_zenith_dask, mapinfo_extents, get_corrected
+from .utils import get_obj, h5_zenith_dask, mapinfo_extents, get_corrected, hyobj_daskify
 
 #Standard Python
 import requests, datetime, re, os, json, glob
@@ -11,6 +11,7 @@ import numpy as np
 from affine import Affine
 from rasterio import Affine as r_Affine
 import h5py
+import stackstac
 
 #Prefect
 from prefect import task
@@ -291,35 +292,30 @@ def moasic_extent(pipeline_list: list) -> list:
 
 @task
 def mosaic(pipeline_list: list, extents: list, site: str, processDate: str) -> bool:
-    #Build Mosaic Template with empty dask array
     t_file = pipeline_list[0] #template file to get common metadata
     wl = t_file['file_meta']['wavelength']
     x_coords = np.arange(extents[0],extents[2])+.5
     y_coords = np.arange(extents[1],extents[3])+.5
     t_h5 = h5py.File(t_file['local_url'],'r')['CPER']['Reflectance']['Reflectance_Data']
     nodata = t_h5.attrs['Data_Ignore_Value']
-    mos = xr.DataArray(data = da.ones((extents[3]-extents[1],
-                                       extents[2]-extents[0],
-                                       len(t_file['file_meta']['wavelength'])),
-                                      chunks=('auto','auto',-1))*-9999.,
-                       coords = {'x' : x_coords,
-                                 'y' : y_coords,
-                                 'wl' : wl},
-                       dims = ('y','x','wl'))
-    
     #Update Mosaic with the mask corrected data
+    ds_flts = []
+    ds_flts_final = []
     for pipe_dict in pipeline_list:
         #Corrected (BRDF + Topo)
         h5_obj = h5py.File(pipe_dict['local_url'],'r')['CPER']['Reflectance']['Reflectance_Data']
+        chnks = (h5_obj.chunks[0],h5_obj.chunks[1],h5_obj.shape[-1])
         shp = h5_obj.shape
         dtype = 'float64'
         minx,miny,maxx,maxy = mapinfo_extents(pipe_dict['file_meta'])
         wl = t_file['file_meta']['wavelength']
         x_coords = np.arange(minx,maxx)+.5
         y_coords = np.arange(miny,maxy)+.5
-        data = da.from_delayed(dask.delayed(get_corrected)(pipe_dict['hy_obj']['obj']),
-                               shape=shp,
-                               dtype=dtype).rechunk(('auto','auto',-1))
+        data = da.from_array(hyobj_daskify(hy_obj = pipe_dict['hy_obj']['obj'],
+                                           shape = pipe_dict['hy_obj']['shape'],
+                                           ndims = 3,
+                                           dtype = 'float32'),
+                             chunks=chnks)
         da_tmp = xr.DataArray(data=data,
                               coords={'y':y_coords,
                                       'x':x_coords,
@@ -328,26 +324,23 @@ def mosaic(pipeline_list: list, extents: list, site: str, processDate: str) -> b
 
         #Apply Mask
         da_mask = pipe_dict['mask']
-        mask = da.from_array(da_mask.to_array().squeeze().data)
-        mask_3d = da.broadcast_to(mask[:,:,np.newaxis],data.shape)
+        mask = da.from_array(da_mask.to_array().squeeze().data,chunks=chnks[0:2])
+        mask_3d = da.broadcast_to(mask[:,:,np.newaxis],data.shape,chunks=chnks)
         da_mask = xr.DataArray(data=mask_3d,
                                coords={'y':y_coords,
                                        'x':x_coords,
                                        'wl':wl},
                                dims=('y','x','wl'))
-        da_tmp = da_tmp.where(da_mask)
+        ds_flts.append([da_tmp,da_mask])
+        da_tmp = da_tmp.where(da_mask)#.to_dataset(name='ds_flt')
         
-        #Insert into mosaic
-        insert_bool = (mos.x>=da_tmp.x.min().values) & (mos.x<=da_tmp.x.max().values) & (mos.y>=da_tmp.y.min().values)&(mos.y<=da_tmp.y.max().values)
         
-        mos = mos.where((insert_bool==False),da_tmp.reindex_like(mos))#|(newnew.isnull())
-
-    #Write Mosaic to file.
-    mos = mos.to_dataset(name='reflectance')
-    mos.to_zarr('./'+site+'_'+processDate+'/neonAOP__DP130006_001__'+site+'__'+processDate+'.zarr',
+        ds_flts_final.append(da_tmp)
+    mos = stackstac.mosaic(xr.concat(ds_flts_final,dim='ds_flt'),dim='ds_flt',axis=None)
+    mos.to_zarr('./'+site+'_'+processDate+'/neonAOP__DP130006_001__'+site+'__'+processDate+'v3.zarr',
                 mode = 'w',
                 consolidated=True,
-                encoding={'foo': {'dtype': 'float64',
-                                  '_FillValue': -9999}})
+                encoding={'reflectance': {'dtype': 'float64',
+                                          '_FillValue': -9999}})
     return(True)
     
