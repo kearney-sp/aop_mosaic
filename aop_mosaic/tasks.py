@@ -142,12 +142,14 @@ def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int
     return(pipeline_dict)
 
 @task(max_retries=3, retry_delay=datetime.timedelta(seconds=3))
-def download_file(pipeline_dict: dict, site: str, processDate: str) -> dict:
+def download_file(pipeline_dict: dict, site: str, processDate: str, result_folder: str) -> dict:
     url = pipeline_dict['url']
     r = requests.get(url,stream=True)
     logger = prefect.context.get("logger")
     logger.info(r.headers)
-    local_url = './'+site+'_'+processDate+'/test1_'+pipeline_dict['name']
+    if result_folder[-1] != '/':
+        result_folder = result_folder+'/'
+    local_url = result_folder+site+'_'+processDate+'/'+pipeline_dict['name']
     
     with open(local_url,mode='wb') as f:
         for chunk in r.iter_content(chunk_size=int(1e+8)):
@@ -169,8 +171,10 @@ def get_file_meta(pipeline_dict: dict) -> dict:
     return(pipeline_dict)
 
 @task
-def write_pipeline_meta(pipeline_dict: list, site: str, processDate: str) -> bool:
-    with open('./'+site+'_'+processDate+'/neonAOP__DP130006_001__'+site+'__'+processDate+'v3.json',mode='w') as f:
+def write_pipeline_meta(pipeline_dict: list, site: str, processDate: str, result_folder: str) -> bool:
+    if result_folder[-1] != '/':
+        result_folder = result_folder+'/'
+    with open(result_folder+site+'_'+processDate+'/neonAOP__DP130006_001__'+site+'__'+processDate+'.json',mode='w') as f:
         json.dump(pipeline_dict,f)
     return(True)
 
