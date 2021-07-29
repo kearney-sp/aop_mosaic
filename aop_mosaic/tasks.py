@@ -42,8 +42,6 @@ def query_data_urls(site: str, processDate: str) -> dict:
 
 @task(max_retries=3, retry_delay=datetime.timedelta(seconds=3))
 def query_file_urls(site_dict: dict,processDate: str, site: str) -> list:
-    if os.path.isdir('./'+site+'_'+processDate) == False:
-        os.mkdir('./'+site+'_'+processDate)
     res = requests.get('https://data.neonscience.org/api/v0/data/DP1.30006.001/CPER/2017-05').json()['data']['files']
     f_list=[]
     for item in res:
@@ -149,6 +147,8 @@ def download_file(pipeline_dict: dict, site: str, processDate: str, result_folde
     logger.info(r.headers)
     if result_folder[-1] != '/':
         result_folder = result_folder+'/'
+    if os.path.isdir(result_folder+site+'_'+processDate) == False:
+        os.mkdir(result_folder+site+'_'+processDate)
     local_url = result_folder+site+'_'+processDate+'/'+pipeline_dict['name']
     
     with open(local_url,mode='wb') as f:
