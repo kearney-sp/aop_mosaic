@@ -9,7 +9,7 @@ def get_obj(hy_obj):
 
 def h5_zenith_dask(file: str) -> dask.array.core.Array:
     h = h5py.File(file,'r')['CPER']['Reflectance']['Metadata']['to-sensor_Zenith_Angle']
-    a = dask.array(h)
+    a = da.array(h)
     return(a,h.shape)
 
 def mapinfo_extents(meta: str) -> str:

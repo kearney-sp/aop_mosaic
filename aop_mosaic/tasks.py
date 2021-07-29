@@ -44,7 +44,7 @@ def query_data_urls(site: str, processDate: str) -> dict:
 def query_file_urls(site_dict: dict,processDate: str, site: str) -> list:
     if os.path.isdir('./'+site+'_'+processDate) == False:
         os.mkdir('./'+site+'_'+processDate)
-    res = requests.get('https://data.neonscience.org/api/v0/data/DP1.30006.001/CPER/2017-05').json()['data']['files'][0:12]
+    res = requests.get('https://data.neonscience.org/api/v0/data/DP1.30006.001/CPER/2017-05').json()['data']['files']
     f_list=[]
     for item in res:
         if item['name'][-14:] == 'reflectance.h5':
@@ -70,7 +70,6 @@ def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int
     config_dict['export']['subset_waves']  = [660,550,440,850]
     config_dict['export']['output_dir'] = "./data1/temp/ht_test/"
     config_dict['export']["suffix"] = 'brdf'
-
 
     ######## Define Corrections ########
     config_dict["corrections"]  = ['topo','brdf']
@@ -121,8 +120,11 @@ def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int
                                                   'T1': 0.01,'t2': 1/10,'t3': 1/4,
                                                   't4': 1/2,'T7': 9,'T8': 9}]]
 
-    config_dict["brdf"]['apply_mask'] = [["ndi", {'band_1': 850,'band_2': 660,
-                                                  'min': 0.05,'max': 1.0}]]
+    config_dict["brdf"]['apply_mask'] = [["ndi", {'band_1': 850,
+                                                  'band_2': 660,
+                                                  'min': 0.05,
+                                                  'max': 1.0}]]
+    
     #Flex Dynamic NDVI Configs
     config_dict["brdf"]['bin_type'] = 'dynamic'
     config_dict["brdf"]['num_bins'] = 18
@@ -138,7 +140,6 @@ def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int
     config_dict['num_cpus'] = cpus
     pipeline_dict['BRDF_TOPO_CONFIG'] = config_dict
     return(pipeline_dict)
-
 
 @task(max_retries=3, retry_delay=datetime.timedelta(seconds=3))
 def download_file(pipeline_dict: dict, site: str, processDate: str) -> dict:
@@ -172,8 +173,6 @@ def write_pipeline_meta(pipeline_dict: list, site: str, processDate: str) -> boo
     with open('./'+site+'_'+processDate+'/neonAOP__DP130006_001__'+site+'__'+processDate+'v3.json',mode='w') as f:
         json.dump(pipeline_dict,f)
     return(True)
-
-
 
 @task
 def apply_corrections_mosaic(pipeline_dict: dict, site: str, processDate: str) -> dict:
@@ -219,7 +218,6 @@ def apply_corrections_mosaic(pipeline_dict: dict, site: str, processDate: str) -
                                'transform':af}
     
     return(pipeline_dict)
-
 
 @task
 def pixel_mosaic_mask(pipeline_dict: dict, 
@@ -277,7 +275,6 @@ def pixel_mosaic_mask(pipeline_dict: dict,
     pipeline_dict['mask'] = xr_mask
     return(pipeline_dict)
 
-
 @task
 def moasic_extent(pipeline_list: list) -> list:
     extents = []
@@ -291,7 +288,7 @@ def moasic_extent(pipeline_list: list) -> list:
     return(domain)
 
 @task
-def mosaic(pipeline_list: list, extents: list, site: str, processDate: str) -> bool:
+def mosaic(pipeline_list: list, extents: list, site: str, processDate: str, result_folder: str) -> bool:
     t_file = pipeline_list[0] #template file to get common metadata
     wl = t_file['file_meta']['wavelength']
     x_coords = np.arange(extents[0],extents[2])+.5
@@ -337,10 +334,11 @@ def mosaic(pipeline_list: list, extents: list, site: str, processDate: str) -> b
         
         ds_flts_final.append(da_tmp)
     mos = stackstac.mosaic(xr.concat(ds_flts_final,dim='ds_flt'),dim='ds_flt',axis=None)
-    mos.to_zarr('./'+site+'_'+processDate+'/neonAOP__DP130006_001__'+site+'__'+processDate+'v3.zarr',
+    if result_folder[-1] != '/':
+        result_folder = result_folder+'/'
+    mos.to_zarr(result_folder+site+'_'+processDate+'/neonAOP__DP130006_001__'+site+'__'+processDate+'v3.zarr',
                 mode = 'w',
                 consolidated=True,
                 encoding={'reflectance': {'dtype': 'float64',
                                           '_FillValue': -9999}})
     return(True)
-    
