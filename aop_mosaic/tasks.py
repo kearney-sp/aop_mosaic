@@ -16,6 +16,7 @@ import stackstac
 #Prefect
 from prefect import task
 import prefect
+from prefect.engine.results import LocalResult
 
 #Distributed / Parallel Computing
 import dask
@@ -29,7 +30,7 @@ from hytools.brdf import calc_brdf_coeffs
 from hytools.masks import mask_create
 
 
-@task(max_retries=3, retry_delay=datetime.timedelta(seconds=3))
+@task(max_retries=3, retry_delay=datetime.timedelta(seconds=3), result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
 def query_data_urls(site: str, processDate: str) -> dict:
     prod_query = requests.get('https://data.neonscience.org/api/v0/products/DP1.30006.001').json()
     for urlsite in prod_query['data']['siteCodes']:
@@ -40,8 +41,12 @@ def query_data_urls(site: str, processDate: str) -> dict:
             return(urlsite)
     return({'res':'Fail'})
 
-@task(max_retries=3, retry_delay=datetime.timedelta(seconds=3))
-def query_file_urls(site_dict: dict,processDate: str, site: str) -> list:
+@task(max_retries=3, retry_delay=datetime.timedelta(seconds=3), result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
+def query_file_urls(site_dict: dict,processDate: str, site: str, result_folder: str) -> list:
+    if result_folder[-1] != '/':
+        result_folder = result_folder+'/'
+    if os.path.isdir(result_folder+site+'_'+processDate) == False:
+        os.mkdir(result_folder+site+'_'+processDate)
     res = requests.get('https://data.neonscience.org/api/v0/data/DP1.30006.001/CPER/2017-05').json()['data']['files']
     f_list=[]
     for item in res:
@@ -49,7 +54,7 @@ def query_file_urls(site_dict: dict,processDate: str, site: str) -> list:
             f_list.append(item)
     return(f_list)
 
-@task(max_retries=3, retry_delay=datetime.timedelta(seconds=3))
+@task(max_retries=3, retry_delay=datetime.timedelta(seconds=3), result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
 def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int) -> dict:
     ######## FROM:https://github.com/EnSpec/hytools/blob/master/scripts/configs/image_correct_json_generate.py ########
     ######## Setup ########
@@ -66,7 +71,7 @@ def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int
     config_dict['export']['image']  = True
     config_dict['export']['masks']  = True
     config_dict['export']['subset_waves']  = [660,550,440,850]
-    config_dict['export']['output_dir'] = "./data1/temp/ht_test/"
+    config_dict['export']['output_dir'] = "./not/used/in/this/workflow"
     config_dict['export']["suffix"] = 'brdf'
 
     ######## Define Corrections ########
@@ -82,9 +87,13 @@ def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int
                                         ['ancillary',{'name':'cosine_i',
                                                       'min': 0.12,'max':'+inf' }],
                                         ['cloud',{'method':'zhai_2018',
-                                                  'cloud':True,'shadow':True,
-                                                  'T1': 0.01,'t2': 1/10,'t3': 1/4,
-                                                  't4': 1/2,'T7': 9,'T8': 9}]]
+                                                  'cloud':True,'shadow':False,
+                                                  'T1': 2.5,'t2': .5,'t3': 1/3,
+                                                  't4': 2/3,'T7': 15,'T8': 15}],
+                                        ['cloud',{'method':'zhai_2018',
+                                                  'cloud':False,'shadow':True,
+                                                  'T1': 2.5,'t2': .5,'t3': 1/3,
+                                                  't4': 2/3,'T7': 15,'T8': 15}]]
     config_dict["topo"]['apply_mask'] = [["ndi", {'band_1': 850,'band_2': 660,
                                                  'min': 0.1,'max': 1.0}],
                                         ['ancillary',{'name':'slope',
@@ -114,9 +123,13 @@ def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int
                                                       'min':np.radians(2),'max':'inf' }],
                                         ['neon_edge',{'radius': 30}],
                                         ['cloud',{'method':'zhai_2018',
-                                                  'cloud':True,'shadow':True,
-                                                  'T1': 0.01,'t2': 1/10,'t3': 1/4,
-                                                  't4': 1/2,'T7': 9,'T8': 9}]]
+                                                  'cloud':True,'shadow':False,
+                                                  'T1': 2.5,'t2': .5,'t3': 1/3,
+                                                  't4': 2/3,'T7': 15,'T8': 15}],
+                                        ['cloud',{'method':'zhai_2018',
+                                                  'cloud':False,'shadow':True,
+                                                  'T1': 2.5,'t2': .5,'t3': 1/3,
+                                                  't4': 2/3,'T7': 15,'T8': 15}]]
 
     config_dict["brdf"]['apply_mask'] = [["ndi", {'band_1': 850,
                                                   'band_2': 660,
@@ -139,7 +152,7 @@ def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int
     pipeline_dict['BRDF_TOPO_CONFIG'] = config_dict
     return(pipeline_dict)
 
-@task(max_retries=3, retry_delay=datetime.timedelta(seconds=3))
+@task(max_retries=3, retry_delay=datetime.timedelta(seconds=3), result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
 def download_file(pipeline_dict: dict, site: str, processDate: str, result_folder: str) -> dict:
     url = pipeline_dict['url']
     r = requests.get(url,stream=True)
@@ -147,8 +160,6 @@ def download_file(pipeline_dict: dict, site: str, processDate: str, result_folde
     logger.info(r.headers)
     if result_folder[-1] != '/':
         result_folder = result_folder+'/'
-    if os.path.isdir(result_folder+site+'_'+processDate) == False:
-        os.mkdir(result_folder+site+'_'+processDate)
     local_url = result_folder+site+'_'+processDate+'/'+pipeline_dict['name']
     
     with open(local_url,mode='wb') as f:
@@ -161,7 +172,7 @@ def download_file(pipeline_dict: dict, site: str, processDate: str, result_folde
         pipeline_dict['local_url'] = None
         return(pipeline_dict)
 
-@task
+@task(result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
 def get_file_meta(pipeline_dict: dict) -> dict:
     neon = ht.HyTools()
     neon.read_file(pipeline_dict['local_url'],file_type= 'neon')
@@ -170,7 +181,7 @@ def get_file_meta(pipeline_dict: dict) -> dict:
     pipeline_dict['file_meta'] = neon_header
     return(pipeline_dict)
 
-@task
+@task(result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
 def write_pipeline_meta(pipeline_dict: list, site: str, processDate: str, result_folder: str) -> bool:
     if result_folder[-1] != '/':
         result_folder = result_folder+'/'
@@ -178,7 +189,7 @@ def write_pipeline_meta(pipeline_dict: list, site: str, processDate: str, result
         json.dump(pipeline_dict,f)
     return(True)
 
-@task
+@task(result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
 def apply_corrections_mosaic(pipeline_dict: dict, site: str, processDate: str) -> dict:
     images = [pipeline_dict['local_url']]
     
@@ -223,12 +234,12 @@ def apply_corrections_mosaic(pipeline_dict: dict, site: str, processDate: str) -
     
     return(pipeline_dict)
 
-@task
-def pixel_mosaic_mask(pipeline_dict: dict, 
-                      pipeline_list: list) -> dict:
-    
+@task(result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
+def pixel_mosaic_mask(pipeline_dict: dict, pipeline_list: list) -> dict:
     #Create Xarray object for flightline
-    data,(ny,nx) = h5_zenith_dask(pipeline_dict['local_url'])
+    h = h5py.File(pipeline_dict['local_url'],'r')['CPER']['Reflectance']['Metadata']['to-sensor_Zenith_Angle']
+    data = da.array(h)
+    (ny,nx) = h.shape
     mapinfo = pipeline_dict['file_meta']['map info']
     transform = pipeline_dict['hy_obj']['transform']
     xcoords,_ = Affine(*transform[0:6]) * (np.arange(nx)+0.5, np.arange(nx)+0.5)
@@ -242,44 +253,99 @@ def pixel_mosaic_mask(pipeline_dict: dict,
     ds = ds.where(ds!=-9999.)
     
     #Create Dictionary of all the other xarray objects
-    xr_obj = {}
+    xr_obj = []
     for pipe_dict in pipeline_list:
         if pipe_dict['name'] != pipeline_dict['name']:
-            data,(ny,nx) = h5_zenith_dask(pipe_dict['local_url'])
+            h = h5py.File(pipe_dict['local_url'],'r')['CPER']['Reflectance']['Metadata']['to-sensor_Zenith_Angle']
+            data = da.array(h)
+            (ny,nx) = h.shape
             mapinfo = pipe_dict['file_meta']['map info']
             transform = pipe_dict['hy_obj']['transform']
             xcoords,_ = Affine(*transform[0:6]) * (np.arange(nx)+0.5, np.arange(nx)+0.5)
             _,ycoords = Affine(*transform[0:6]) * (np.arange(ny)+0.5, np.arange(ny)+0.5)
             print(data.shape,len(xcoords),len(ycoords))
-            xr_obj[pipe_dict['local_url'].split('/')[-1][0:-3]] = xr.DataArray(data=data,
-                                                                               coords={'x':xcoords,
-                                                                                       'y':ycoords},
-                                                                               dims=('y','x'))
-    #Stack flights that overlap with flightline
-    l = []
-    for k in xr_obj.keys():
-        print(k)
-        x1 = xr_obj[k].sel(x=slice(ds.x.min(),
+            
+            darr = xr.DataArray(data=data[:,:,np.newaxis],coords={'x':xcoords,'y':ycoords,'flt':[pipe_dict['local_url'].split('/')[-1][0:-3]]}, dims=('y','x','flt'))
+            darr = darr.sel(x=slice(ds.x.min(),
                                    ds.x.max()),
                            y=slice(ds.y.max(),
                                    ds.y.min()))
-        
-        if np.array(x1.shape).min()> 0:
-            x1 = x1.interp_like(ds,method='linear',kwargs={'fill_value':np.nan})#
-            l.append(x1.to_dataset(name=k))
-    print(len(l))
-    if len(l)>0:
-        other_mins = xr.combine_by_coords(l)
-        other_mins = other_mins.to_array(dim='flights').squeeze().drop('flights').compute()
-        other_mins = other_mins.where(other_mins>0.,9999.)
-        xr_mask = (ds<=other_mins) & (ds>0.)
+            if np.array(darr.shape).min()> 0:
+                xr_obj.append(darr)
+    if len(xr_obj)>1:
+        print(len(xr_obj))
+        other_mins = xr.concat(xr_obj,dim='flt')
+        other_mins = other_mins.where(other_mins>0.,9999.).min('flt').compute()
+        xr_mask = ds<=other_mins
+    elif len(xr_obj)==1:
+        other_mins = xr_obj[0].where(other_mins>0.,9999.).compute()
+        xr_mask = ds<=other_mins
     else:
         xr_mask = ds>0.
-    xr_mask = xr_mask.to_dataset(name=pipeline_dict['local_url'].split('/')[-1][0:-3])
     pipeline_dict['mask'] = xr_mask
     return(pipeline_dict)
+# def pixel_mosaic_mask(pipeline_dict: dict, 
+#                       pipeline_list: list) -> dict:
+    
+#     #Create Xarray object for flightline
+#     h = h5py.File(pipeline_dict['local_url'],'r')['CPER']['Reflectance']['Metadata']['to-sensor_Zenith_Angle']
+#     data = da.array(h)
+#     (ny,nx) = h.shape
+#     #data,(ny,nx) = h5_zenith_dask(pipeline_dict['local_url'])
+#     mapinfo = pipeline_dict['file_meta']['map info']
+#     transform = pipeline_dict['hy_obj']['transform']
+#     xcoords,_ = Affine(*transform[0:6]) * (np.arange(nx)+0.5, np.arange(nx)+0.5)
+#     _,ycoords = Affine(*transform[0:6]) * (np.arange(ny)+0.5, np.arange(ny)+0.5)
+#     print(data.shape,len(xcoords),len(ycoords))
+#     ds = xr.DataArray(data=data,
+#                       coords={'x':xcoords,
+#                               'y':ycoords},
+#                       dims=('y','x'))
+#     ds = ds.compute()
+#     ds = ds.where(ds!=-9999.)
+    
+#     #Create Dictionary of all the other xarray objects
+#     xr_obj = {}
+#     for pipe_dict in pipeline_list:
+#         if pipe_dict['name'] != pipeline_dict['name']:
+#             h = h5py.File(pipe_dict['local_url'],'r')['CPER']['Reflectance']['Metadata']['to-sensor_Zenith_Angle']
+#             data = da.array(h)
+#             (ny,nx) = h.shape
+#             #data,(ny,nx) = h5_zenith_dask(pipe_dict['local_url'])
+#             mapinfo = pipe_dict['file_meta']['map info']
+#             transform = pipe_dict['hy_obj']['transform']
+#             xcoords,_ = Affine(*transform[0:6]) * (np.arange(nx)+0.5, np.arange(nx)+0.5)
+#             _,ycoords = Affine(*transform[0:6]) * (np.arange(ny)+0.5, np.arange(ny)+0.5)
+#             print(data.shape,len(xcoords),len(ycoords))
+#             xr_obj[pipe_dict['local_url'].split('/')[-1][0:-3]] = xr.DataArray(data=data,
+#                                                                                coords={'x':xcoords,
+#                                                                                        'y':ycoords},
+#                                                                                dims=('y','x'))
+#     #Stack flights that overlap with flightline
+#     l = []
+#     for k in xr_obj.keys():
+#         print(k)
+#         x1 = xr_obj[k].sel(x=slice(ds.x.min(),
+#                                    ds.x.max()),
+#                            y=slice(ds.y.max(),
+#                                    ds.y.min()))
+        
+#         if np.array(x1.shape).min()> 0:
+#             x1 = x1.interp_like(ds,method='linear',kwargs={'fill_value':np.nan})#
+#             l.append(x1.to_dataset(name=k))
+#     print(len(l))
+#     if len(l)>0:
+#         other_mins = xr.combine_by_coords(l)
+#         other_mins = other_mins.to_array(dim='flights').squeeze().drop('flights')#.compute()
+#         other_mins = other_mins.where(other_mins>0.,9999.)
+#         xr_mask = (ds<=other_mins) & (ds>0.)
+#     else:
+#         xr_mask = ds>0.
+#     xr_mask = xr_mask.to_dataset(name=pipeline_dict['local_url'].split('/')[-1][0:-3])
+#     pipeline_dict['mask'] = xr_mask.compute()
+#     return(pipeline_dict)
 
-@task
+@task(result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
 def moasic_extent(pipeline_list: list) -> list:
     extents = []
     for pipe_dict in pipeline_list:
@@ -291,7 +357,7 @@ def moasic_extent(pipeline_list: list) -> list:
               np.max(extents[:,3])]
     return(domain)
 
-@task
+@task(result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
 def mosaic(pipeline_list: list, extents: list, site: str, processDate: str, result_folder: str) -> bool:
     t_file = pipeline_list[0] #template file to get common metadata
     wl = t_file['file_meta']['wavelength']
