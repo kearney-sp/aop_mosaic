@@ -130,3 +130,7 @@ dmypy.json
 
 #Dask
 dask-worker-space/
+
+#Results
+results/
+imgs/
