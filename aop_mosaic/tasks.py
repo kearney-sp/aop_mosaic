@@ -13,11 +13,6 @@ from rasterio import Affine as r_Affine
 import h5py
 import stackstac
 
-#Prefect
-from prefect import task
-import prefect
-from prefect.engine.results import LocalResult
-
 #Distributed / Parallel Computing
 import dask
 from dask import array as da
@@ -29,8 +24,6 @@ from hytools.topo import calc_topo_coeffs
 from hytools.brdf import calc_brdf_coeffs
 from hytools.masks import mask_create
 
-
-@task(max_retries=3, retry_delay=datetime.timedelta(seconds=3), result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
 def query_data_urls(site: str, processDate: str) -> dict:
     prod_query = requests.get('https://data.neonscience.org/api/v0/products/DP1.30006.001').json()
     for urlsite in prod_query['data']['siteCodes']:
@@ -41,8 +34,7 @@ def query_data_urls(site: str, processDate: str) -> dict:
             return(urlsite)
     return({'res':'Fail'})
 
-@task(max_retries=3, retry_delay=datetime.timedelta(seconds=3), result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
-def query_file_urls(site_dict: dict,processDate: str, site: str, result_folder: str) -> list:
+def query_file_urls(site_dict: dict, processDate: str, site: str, result_folder: str) -> list:
     if result_folder[-1] != '/':
         result_folder = result_folder+'/'
     if os.path.isdir(result_folder+site+'_'+processDate) == False:
@@ -54,12 +46,12 @@ def query_file_urls(site_dict: dict,processDate: str, site: str, result_folder: 
             f_list.append(item)
     return(f_list)
 
-@task(max_retries=3, retry_delay=datetime.timedelta(seconds=3), result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
+@dask.delayed
 def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int) -> dict:
     ######## FROM:https://github.com/EnSpec/hytools/blob/master/scripts/configs/image_correct_json_generate.py ########
     ######## Setup ########
     config_dict = {}
-
+    print(config_dict)
     ######## File Format/Type ########
     config_dict['bad_bands'] =[[300,400],[1337,1430],[1800,1960],[2450,2600]]
     config_dict['file_type'] = 'neon'
@@ -80,7 +72,7 @@ def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int
     ######## Topographic Correction ########
     config_dict["topo"] =  {}
     config_dict["topo"]['type'] =  'scs+c'
-    config_dict["topo"]['calc_mask'] = [["ndi", {'band_1': 850,'band_2': 660,
+    config_dict["topo"]['calc_mask'] = [['ndi', {'band_1': 850,'band_2': 660,
                                                  'min': 0.1,'max': 1.0}],
                                         ['ancillary',{'name':'slope',
                                                       'min': np.radians(5),'max':'+inf' }],
@@ -89,12 +81,8 @@ def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int
                                         ['cloud',{'method':'zhai_2018',
                                                   'cloud':True,'shadow':False,
                                                   'T1': 2.5,'t2': .5,'t3': 1/3,
-                                                  't4': 2/3,'T7': 15,'T8': 15}],
-                                        ['cloud',{'method':'zhai_2018',
-                                                  'cloud':False,'shadow':True,
-                                                  'T1': 2.5,'t2': .5,'t3': 1/3,
                                                   't4': 2/3,'T7': 15,'T8': 15}]]
-    config_dict["topo"]['apply_mask'] = [["ndi", {'band_1': 850,'band_2': 660,
+    config_dict["topo"]['apply_mask'] = [['ndi', {'band_1': 850,'band_2': 660,
                                                  'min': 0.1,'max': 1.0}],
                                         ['ancillary',{'name':'slope',
                                                       'min': np.radians(5),'max':'+inf' }],
@@ -116,7 +104,7 @@ def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int
     config_dict["brdf"]["h/b"] = 2
     config_dict["brdf"]['sample_perc'] = 0.1
     config_dict["brdf"]['interp_kind'] = 'linear'
-    config_dict["brdf"]['calc_mask'] = [["ndi", {'band_1': 850,'band_2': 660,
+    config_dict["brdf"]['calc_mask'] = [['ndi', {'band_1': 850,'band_2': 660,
                                                   'min': 0.1,'max': 1.0}],
                                         ['kernel_finite',{}],
                                         ['ancillary',{'name':'sensor_zn',
@@ -125,13 +113,9 @@ def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int
                                         ['cloud',{'method':'zhai_2018',
                                                   'cloud':True,'shadow':False,
                                                   'T1': 2.5,'t2': .5,'t3': 1/3,
-                                                  't4': 2/3,'T7': 15,'T8': 15}],
-                                        ['cloud',{'method':'zhai_2018',
-                                                  'cloud':False,'shadow':True,
-                                                  'T1': 2.5,'t2': .5,'t3': 1/3,
                                                   't4': 2/3,'T7': 15,'T8': 15}]]
 
-    config_dict["brdf"]['apply_mask'] = [["ndi", {'band_1': 850,
+    config_dict["brdf"]['apply_mask'] = [['ndi', {'band_1': 850,
                                                   'band_2': 660,
                                                   'min': 0.05,
                                                   'max': 1.0}]]
@@ -152,27 +136,29 @@ def BRDF_TOPO_Config(pipeline_dict: dict, site: str, processDate: str, cpus: int
     pipeline_dict['BRDF_TOPO_CONFIG'] = config_dict
     return(pipeline_dict)
 
-@task(max_retries=3, retry_delay=datetime.timedelta(seconds=3), result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
+@dask.delayed
 def download_file(pipeline_dict: dict, site: str, processDate: str, result_folder: str) -> dict:
     url = pipeline_dict['url']
     r = requests.get(url,stream=True)
-    logger = prefect.context.get("logger")
-    logger.info(r.headers)
     if result_folder[-1] != '/':
         result_folder = result_folder+'/'
     local_url = result_folder+site+'_'+processDate+'/'+pipeline_dict['name']
-    
-    with open(local_url,mode='wb') as f:
-        for chunk in r.iter_content(chunk_size=int(1e+8)):
-            f.write(chunk)
-    if r.status_code == 200:
-        pipeline_dict['local_url'] = local_url
-        return(pipeline_dict)
+    if os.path.exists(local_url):
+        if os.path.getsize(local_url) == pipeline_dict['size']:
+            print('Skipping file: already downloaded!')
+            pipeline_dict['local_url'] = local_url
+            return(pipeline_dict)
     else:
-        pipeline_dict['local_url'] = None
-        return(pipeline_dict)
+        with open(local_url ,mode='wb') as f:
+            for chunk in r.iter_content(chunk_size=int(1e+8)):
+                f.write(chunk)
+        if r.status_code == 200:
+            pipeline_dict['local_url'] = local_url
+        else:
+            pipeline_dict['local_url'] = None
+    return(pipeline_dict)
 
-@task(result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
+@dask.delayed
 def get_file_meta(pipeline_dict: dict) -> dict:
     neon = ht.HyTools()
     neon.read_file(pipeline_dict['local_url'],file_type= 'neon')
@@ -181,7 +167,7 @@ def get_file_meta(pipeline_dict: dict) -> dict:
     pipeline_dict['file_meta'] = neon_header
     return(pipeline_dict)
 
-@task(result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
+@dask.delayed
 def write_pipeline_meta(pipeline_dict: list, site: str, processDate: str, result_folder: str) -> bool:
     if result_folder[-1] != '/':
         result_folder = result_folder+'/'
@@ -189,7 +175,7 @@ def write_pipeline_meta(pipeline_dict: list, site: str, processDate: str, result
         json.dump(pipeline_dict,f)
     return(True)
 
-@task(result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
+@dask.delayed
 def apply_corrections_mosaic(pipeline_dict: dict, site: str, processDate: str) -> dict:
     images = [pipeline_dict['local_url']]
     
@@ -234,7 +220,7 @@ def apply_corrections_mosaic(pipeline_dict: dict, site: str, processDate: str) -
     
     return(pipeline_dict)
 
-@task(result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
+@dask.delayed
 def pixel_mosaic_mask(pipeline_dict: dict, pipeline_list: list) -> dict:
     #Create Xarray object for flightline
     h = h5py.File(pipeline_dict['local_url'],'r')['CPER']['Reflectance']['Metadata']['to-sensor_Zenith_Angle']
@@ -345,7 +331,7 @@ def pixel_mosaic_mask(pipeline_dict: dict, pipeline_list: list) -> dict:
 #     pipeline_dict['mask'] = xr_mask.compute()
 #     return(pipeline_dict)
 
-@task(result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
+@dask.delayed
 def moasic_extent(pipeline_list: list) -> list:
     extents = []
     for pipe_dict in pipeline_list:
@@ -357,7 +343,7 @@ def moasic_extent(pipeline_list: list) -> list:
               np.max(extents[:,3])]
     return(domain)
 
-@task(result=LocalResult(dir='/90daydata/cper_neon_aop/.prefect'))
+@dask.delayed
 def mosaic(pipeline_list: list, extents: list, site: str, processDate: str, result_folder: str) -> bool:
     t_file = pipeline_list[0] #template file to get common metadata
     wl = t_file['file_meta']['wavelength']
@@ -391,7 +377,7 @@ def mosaic(pipeline_list: list, extents: list, site: str, processDate: str, resu
 
         #Apply Mask
         da_mask = pipe_dict['mask']
-        mask = da.from_array(da_mask.to_array().squeeze().data,chunks=chnks[0:2])
+        mask = da.from_array(da_mask.squeeze().data,chunks=chnks[0:2])
         mask_3d = da.broadcast_to(mask[:,:,np.newaxis],data.shape,chunks=chnks)
         da_mask = xr.DataArray(data=mask_3d,
                                coords={'y':y_coords,

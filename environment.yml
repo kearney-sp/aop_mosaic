@@ -1,0 +1,25 @@
+name: hytools_dask_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - xarray
+  - numpy
+  - rasterio
+  - rioxarray
+  - h5py
+  - dask
+  - jupyterlab
+  - pip
+  - gdal
+  - scikit-learn
+  - scipy
+  - matplotlib
+  - pandas
+  - stackstac
+  - nodejs
+  - dask-labextension
+  - pip:
+    - ray
+    - git+https://github.com/EnSpec/hytools.git
